@@ -9,8 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.10.0",
     "@prisma/client": "^6.15.0",
     "next": "15.5.2",
+    "next-auth": "^5.0.0-beta.29",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
@@ -27,6 +29,6 @@
     "typescript": "^5"
   },
   "prisma": {
-    "schema": "src/app/prisma/schema.prisma"
+    "schema": "prisma/schema.prisma"
   }
 }
