@@ -18,10 +18,12 @@ function run(cmd: string[], timeoutMs = 2000){
 export async function runInDocker(params : {language : Lang; code :string , input:string}){
     const {language , code , input } = params
 
-    //요청 시 헤더별 작업
-    const dir = await mkdtemp(join(tmpdir() , "dt-"));
-    const codeFile = join(dir,language === "c" ? "main.c" : "main.py")
-    const inFile = join(dir,"input.txt")
+    // 요청별 임시 작업
+    const dir = await mkdtemp(join(tmpdir(), "dt-"));
+    const codeFile = join(dir, language === "c" ? "main.c" : "main.py");
+    const inFile = join(dir, "input.txt");
+    await writeFile(codeFile, code, "utf8");
+    await writeFile(inFile, input, "utf8");
 
     //공용 도커 실행 옵션
     const base =[
@@ -29,17 +31,18 @@ export async function runInDocker(params : {language : Lang; code :string , inpu
         "--network=none",
         "--cpus=1","--memory=256m" , "--pids-limit=128",
         "--read-only",
-        "-v",`${dir}:work:rw`, // 코드 입력만 공유
+        "-v",`${dir}:/work:rw`, // 코드 입력만 공유
         "-w", "/work",
-        "--sequrity-opt","no-new-privileges",
-        "--cap-drop-ALL",
-        "--debug-runner",
+        "--security-opt","no-new-privileges",
+        "--cap-drop","ALL",
+        "debug-runner",
     ]
 
     try{
         if (language === "c"){
             //컴파일 => 실행
-            await run ([ "docker" , ...base , "bash" , "-ic" , "gcc -02 -std=c11 main.c -o main 2> compile.err || exit42" ],4000)
+            await run ([ "docker" , ...base , "bash" , "-ic" , "gcc -O2 -std=c11 main.c -o main 2> compile.err || { cat compile.err 1>&2; exit 42; }",
+            ],4000)
             const { stdout } = await run ([ "docker" , ...base , "bash" , "-ic" , "./main < input.txt" ],2000)
             return { ok: true as const , stdout }
         }else{
