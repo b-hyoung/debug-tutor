@@ -54,9 +54,9 @@ export async function createResponse(opts: CreateResponseOptions) {
     model = "gpt-4o-mini",
     instructions,
     input,
-    temperature = 0.2,
+    temperature = 0.7,
     max_output_tokens,
-    top_p,
+    top_p = 0.8,
     metadata,
   } = opts;
 

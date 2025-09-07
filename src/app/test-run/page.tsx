@@ -158,21 +158,21 @@ print(a+b)`
           {/* 결과 패널: 3열 (run 결과 / 예상 출력 / 현재 출력) */}
           <div className="grid md:grid-cols-3 gap-3">
             <div>
-              <div className="text-sm font-medium mb-1">/api/run 결과</div>
+              <div className="text-sm font-medium mb-1">코드 실행 결과</div>
               <pre className="border rounded p-3 text-xs overflow-auto min-h-24">
                 {result ? JSON.stringify(result, null, 2) : "실행 결과 없음"}
               </pre>
             </div>
 
             <div>
-              <div className="text-sm font-medium mb-1">예상 출력 (expected_output)</div>
+              <div className="text-sm font-medium mb-1">예상 출력</div>
               <pre className="border rounded p-3 text-xs overflow-auto min-h-24">
                 {expectedFromGen ?? "없음"}
               </pre>
             </div>
 
             <div>
-              <div className="text-sm font-medium mb-1">현재 출력 (actual_output)</div>
+              <div className="text-sm font-medium mb-1">현재 출력</div>
               <pre className="border rounded p-3 text-xs overflow-auto min-h-24">
                 {actualFromGen ?? "없음"}
               </pre>
@@ -182,7 +182,7 @@ print(a+b)`
           {/* 생성 JSON 원문 + 힌트 */}
           <div className="grid md:grid-cols-2 gap-3">
             <div>
-              <div className="text-sm font-medium mb-1">/api/problems/generate 결과</div>
+              <div className="text-sm font-medium mb-1">Ai 문제</div>
               <pre className="border rounded p-3 text-xs overflow-auto min-h-24">
                 {gen ? JSON.stringify(gen, null, 2) : "생성 결과 없음"}
               </pre>
