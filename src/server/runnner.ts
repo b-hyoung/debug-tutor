@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-type Lang = "c" | "python"
+export type Lang = "c" | "python"
 
 function run(cmd: string[], timeoutMs = 2000){
     return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {

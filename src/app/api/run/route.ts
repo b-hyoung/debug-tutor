@@ -1,13 +1,13 @@
-import { runInDocker } from "@/server/runnner";
+import { Lang, runInDocker } from "@/server/runnner";
 import { NextRequest, NextResponse } from "next/server";
 
 // 호출 방법
 // fetch("/api/run", { method: "POST", body: JSON.stringify({ language: "c", code, input }) })
-
 // 간단한 레이트 리밋/입력 크기 제한은 프록시(or 미들웨어)에서 추가 권장
 export async function POST(req: NextRequest) {
   try {
-    const { language, code, input } = await req.json();
+
+    const {language,code, input } = await req.json();
 
     if (!["c", "python"].includes(language)) {
       return NextResponse.json({ error: "unsupported_language" }, { status: 400 });

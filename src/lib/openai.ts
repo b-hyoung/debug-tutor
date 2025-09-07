@@ -63,15 +63,14 @@ export async function createResponse(opts: CreateResponseOptions) {
   const normalizedInput = normalizeInput(input);
 
   const response = await openai.responses.create({
-    model,
-    instructions,
-    //인풋 보호장치를 통해 한번더 변환해 ai에게 전송
-    input: normalizedInput,
-    temperature,
-    max_output_tokens,
-    top_p,
-    metadata,
-  });
+  model,
+  instructions,
+  input: normalizedInput,
+  temperature,
+  max_output_tokens,
+  top_p,
+  metadata,
+});
 
   return response;
 }
