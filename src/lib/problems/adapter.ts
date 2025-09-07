@@ -11,28 +11,7 @@ const asCase = (x: any): RawCase | null =>
     ? { name: "case_1", input: x.input, expected_output: x.expected_output }
     : null;
 
-function getFallbackBuggyCode(language: Lang): string {
-  if (language === "c") {
-    // BUG: 마지막 출력 루프가 i <= n (out-of-bounds)
-    return `#include <stdio.h>
-int main(){ int n; if(scanf("%d",&n)!=1) return 0; int arr[n];
-for(int i=0;i<n;i++) scanf("%d",&arr[i]);
-for(int i=0;i<n-1;i++){ for(int j=0;j<n-i-1;j++){ if(arr[j]>arr[j+1]){ int t=arr[j]; arr[j]=arr[j+1]; arr[j+1]=t; } } }
-for(int i=0;i<=n;i++) printf("%d ",arr[i]); // BUG: <= n
-return 0; }`;
-  }
-  // BUG: 내부 루프 범위 오류 (n-i) → 마지막 비교 누락 가능
-  return `import sys
-def bubble(a):
-    n=len(a)
-    for i in range(n):
-        for j in range(0, n-i):  # BUG: n-i-1 이어야 안전
-            if j+1<n and a[j]>a[j+1]:
-                a[j],a[j+1]=a[j+1],a[j]
-    return a
-arr=list(map(int, sys.stdin.read().strip().split()))
-print(*bubble(arr))`;
-}
+
 
 // ---------- 2) 어댑터 본체 ----------
 export function adaptToProblem(parsed: any, language: Lang): RawProblem | null {
@@ -47,8 +26,7 @@ export function adaptToProblem(parsed: any, language: Lang): RawProblem | null {
     const code =
       (typeof ex.buggy_code === "string" && ex.buggy_code) ||
       (typeof ex.code === "string" && ex.code) ||
-      codeFromPropsEx ||
-      getFallbackBuggyCode(language); // ← 코드 누락 시 기본 버그 코드
+      codeFromPropsEx
 
     const input =
       (typeof ex.input === "string" && ex.input) ||
@@ -77,8 +55,7 @@ export function adaptToProblem(parsed: any, language: Lang): RawProblem | null {
 
   const buggy_code =
     (typeof P.buggy_code === "string" && P.buggy_code) ||
-    (typeof P.code === "string" && P.code) ||
-    getFallbackBuggyCode(language); // ← 코드 누락 시 기본 버그 코드
+    (typeof P.code === "string" && P.code)
 
   let tc: RawCase | null = null;
   if (P.test_case && typeof P.test_case === "object") {

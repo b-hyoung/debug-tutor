@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
 import { python } from "@codemirror/lang-python";
 import { cpp } from "@codemirror/lang-cpp";
+import { stdout } from "process";
 
 type Lang = "c" | "python";
 
@@ -39,9 +40,11 @@ print(a+b)`
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ language, code, input }),
       });
-      const json = await res.json();
-      setResult(json);
-      console.log(json);
+    const json = await res.json();
+    const arr = JSON.parse(json.stdout);   // 문자열 → 배열
+    const formatted = `[${arr.join(", ")}]`; 
+    setResult(formatted);
+
     } catch (e: any) {
       setResult({ error: String(e?.message || e) });
     } finally {
