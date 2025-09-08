@@ -1,42 +1,63 @@
 datasource db {
-  provider = "postgresql"    // DB 종류. MySQL도 가능
-  url      = env("DATABASE_URL")  // .env에서 연결 문자열 읽음
+  provider = "postgresql" // DB 종류. MySQL도 가능
+  url      = env("DATABASE_URL") // .env에서 연결 문자열 읽음
 }
+
 generator client {
   provider = "prisma-client-js" // client 생성기
 }
 
-//기본 역할
-enum UserRole {
-  user      // 기본 사용자
-  admin    // admin-only 포스트
-}
-
 model User {
-  id String @id @default(cuid()) //고유 id
-  username String @unique // 고유 사용자이름 유니크값
-  email String? @unique //고유 이메일 유니크값
-  name String? //중복가능한 이름
-  pictureUrl String? //프로필 사진
-  role UserRole @default(user) //기본 역할 user
-  
+  id            String    @id @default(cuid()) //고유 id
+  username      String?   @unique // 고유 사용자이름 유니크값
+  email         String?   @unique //고유 이메일 유니크값
+  emailVerified DateTime? // NextAuth 이메일 검증일
+  image         String? // NextAuth 호환 프로필 이미지
+
   //활동 지표
-  loginCount Int @default(0) //로그인 횟수
+  loginCount  Int       @default(0) //로그인 횟수
   lastLoginAt DateTime? //마지막 로그인 시간
 
   createdAt DateTime @default(now()) //생성 시간
-  updateAt DateTime @updatedAt //업데이트 시간
+  updateAt  DateTime @updatedAt //업데이트 시간
 
-  accounts    OAuthAccount[] //OAuth 계정들
+  authAccounts Account[] // NextAuth Account 테이블과의 역참조
+  sessions     Session[] // NextAuth Session 테이블과의 역참조
 }
 
-model OAuthAccount{
-  id String @id @default(cuid()) //고유 id
-  userId String //User id (foreign key)
-  provider String //google  
-  providerUserId String // google sub
-  
-  user User @relation(fields: [userId] , references: [id]) 
+/// NextAuth Prisma Adapter tables (Account / Session / VerificationToken)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
-  @@unique([provider, providerUserId]) //같은 provider와 providerUserId 조합은 1개만 가능
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
