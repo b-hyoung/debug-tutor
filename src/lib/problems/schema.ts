@@ -5,7 +5,10 @@ export const schema = {
   properties: {
     title: { type: "string" },
     language: { type: "string", enum: ["c", "python"] },
-    buggy_code: { type: "string" },
+    buggy_code: {
+      type: "string",
+      description: "버그가 포함된 코드 (주석/힌트 금지, 코드만 허용)",
+    },
     test_case: {
       type: "object",
       required: ["name", "input", "expected_output"],
@@ -16,9 +19,13 @@ export const schema = {
         expected_output: { type: "string" },
       },
     },
-    hint_levels: { type: "array", items: { type: "string" } },
+    hint_levels: {
+      type: "array",
+      items: { type: "string" },
+    },
   },
 } as const;
+
 
 export const instructions =
   "너는 '버그 포함 알고리즘 문제' 생성기다. " +
