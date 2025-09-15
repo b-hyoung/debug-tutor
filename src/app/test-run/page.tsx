@@ -26,6 +26,15 @@ type GeneratedProblem = {
   valid_bug?: boolean;
 };
 
+// 채점 결과 UI 스키마(화면 표시에 맞춘 공통 포맷)
+type JudgeLikeResult = {
+  pass: boolean;
+  validator: string;
+  total: number;
+  failed: number;
+  results: { name: string; ok: boolean; actual?: string; error?: string }[];
+};
+
 export default function TestRunPage() {
   // ---------------- 상태 ----------------
   const [language, setLanguage] = useState<Lang>("python");
@@ -34,20 +43,20 @@ export default function TestRunPage() {
     `# 기본 파이썬 코드\na, b = map(int, input().split())\nprint(a+b)`
   );
   const [input, setInput] = useState<string>("5 3");
-  const [result, setResult] = useState<null | { ok?: boolean; stdout?: string; error?: string; raw?: any }>(null); // /api/run 결과
-  const [loading, setLoading] = useState(false);
-  const [gen, setGen] = useState<GeneratedProblem | null>(null); // /api/problems/generate 결과
 
-  // 제출 검증용 상태
-  const [problemId, setProblemId] = useState<string>("sort-demo"); // reverse-demo, sum-demo 도 테스트 가능
+  // /api/run 결과(단순 실행 버튼용)
+  const [result, setResult] = useState<null | { ok?: boolean; stdout?: string; error?: string; raw?: any }>(null);
+  const [loading, setLoading] = useState(false);
+
+  // /api/problems/generate 결과
+  const [gen, setGen] = useState<GeneratedProblem | null>(null);
+
+  // 채점 모드용 문제 ID (비우면 실행 모드로 판단)
+  const [problemId, setProblemId] = useState<string>(""); // ← 기본값: 빈 문자열 = 실행 모드
+
+  // 제출(채점/실행 공통 UI 스키마) 결과
   const [submitting, setSubmitting] = useState(false);
-  const [submitResult, setSubmitResult] = useState<null | {
-    pass: boolean;
-    validator: string;
-    total: number;
-    failed: number;
-    results: { name: string; ok: boolean; actual?: string; error?: string }[];
-  }>(null);
+  const [submitResult, setSubmitResult] = useState<JudgeLikeResult | null>(null);
   const isSuccess = submitResult?.pass === true;
 
   // ---------------- CodeMirror 확장 ----------------
@@ -56,42 +65,58 @@ export default function TestRunPage() {
     [language]
   );
 
-  // ---------------- 실행 ----------------
-  const run = async () => {
-    setLoading(true);
-    setResult(null);
+  // ---------------- 실행 버튼 (/api/run) ----------------
+// ---------------- 실행 버튼 (/api/run) ----------------
+const run = async () => {
+  setLoading(true);
+  setResult(null);
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language, code, input }),
+    });
+
+    const text = await res.text();
+    let json: any = null;
     try {
-      const res = await fetch("/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language, code, input }),
-      });
-      const json = await res.json();
-
-      // 안전 파싱: stdout이 JSON 배열 문자열일 수도, 그냥 문자열일 수도 있음
-      let normalized: string | undefined = undefined;
-      if (typeof json?.stdout === "string") {
-        const s = json.stdout.trim();
-        try {
-          // 예: "[1,2,3]" 형태라면 보기 좋게
-          const arr = JSON.parse(s);
-          if (Array.isArray(arr)) {
-            normalized = `[${arr.join(", ")}]`;
-          } else {
-            normalized = s;
-          }
-        } catch {
-          normalized = s;
-        }
-      }
-
-      setResult({ ok: json?.ok, stdout: normalized, error: json?.error, raw: json });
-    } catch (e: any) {
-      setResult({ error: String(e?.message || e) });
-    } finally {
-      setLoading(false);
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // 비JSON 응답(HTML 에러 페이지 등)
+      setResult({ ok: false, error: `Non-JSON response: ${text.slice(0, 500)}`, raw: text });
+      return;
     }
-  };
+
+    // 상태코드 로그 (원인 파악용)
+    console.log("[/api/run]", res.status, json);
+
+    if (!res.ok) {
+      // 서버에서 에러 포맷을 내려줌
+      setResult({ ok: false, error: json?.error ?? `HTTP ${res.status}`, raw: json });
+      return;
+    }
+
+    // stdout 정규화(배열 문자열이면 보기 좋게)
+    let normalized: string | undefined;
+    if (typeof json?.stdout === "string") {
+      const s = json.stdout.trim();
+      try {
+        const arr = JSON.parse(s);
+        normalized = Array.isArray(arr) ? `[${arr.join(", ")}]` : s;
+      } catch {
+        normalized = s;
+      }
+    } else {
+      normalized = ""; // 빈 출력도 명시적으로 처리
+    }
+
+    setResult({ ok: true, stdout: normalized, raw: json });
+  } catch (e: any) {
+    setResult({ ok: false, error: String(e?.message || e) });
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ---------------- 문제 생성 ----------------
   const generateAndValidate = async () => {
@@ -112,66 +137,117 @@ export default function TestRunPage() {
         const p = data as GeneratedProblem;
         setGen(p);
       }
-    } catch (e: any) {
+    } catch {
       setGen(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // ---------------- 제출 검증 (서버 비공개 케이스 포함) ----------------
-  const submitForJudge = async () => {
-    setSubmitting(true);
-    setSubmitResult(null);
+  // ---------------- 제출 검증 ----------------
+  // ---------------- 제출 검증 ----------------
+const submitForJudge = async () => {
+  setSubmitting(true);
+  setSubmitResult(null);
+  try {
+    const isJudgeMode = Boolean(problemId && problemId.trim().length > 0);
+    const url = isJudgeMode ? "/api/judge" : "/api/submit";
+    const payload = isJudgeMode
+      ? { problemId, language, userCode: code } // 채점기 스키마
+      : { language, code, input: input ?? "" }; // 실행기 스키마
+
+    console.log(
+      `[submitForJudge] mode=${isJudgeMode ? "judge" : "runner"} url=${url} payloadKeys=${Object.keys(payload).join(",")}`
+    );
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    let json: any = null;
     try {
-      const res = await fetch("/api/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ problemId, language, userCode: code }),
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      setSubmitResult({
+        pass: false,
+        validator: "unknown",
+        total: 0,
+        failed: 0,
+        results: [
+          { name: `${res.status} ${res.statusText}`, ok: false, error: text?.slice(0, 500) || "Non-JSON response" },
+        ],
       });
-
-      const text = await res.text();
-      let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        // not JSON (likely HTML error page). Surface it as an error row.
-        setSubmitResult({
-          pass: false,
-          validator: "unknown",
-          total: 0,
-          failed: 0,
-          results: [
-            {
-              name: `${res.status} ${res.statusText}`,
-              ok: false,
-              error: text?.slice(0, 500) || "Non-JSON response",
-            },
-          ],
-        });
-        return;
-      }
-
-      if (!res.ok) {
-        setSubmitResult({
-          pass: false,
-          validator: String(json?.validator ?? "unknown"),
-          total: Number(json?.total ?? 0),
-          failed: Number(json?.failed ?? 0),
-          results: Array.isArray(json?.results) ? json.results : [
-            { name: `${res.status} ${res.statusText}`, ok: false, error: JSON.stringify(json).slice(0, 500) }
-          ],
-        });
-        return;
-      }
-
-      setSubmitResult(json);
-    } catch (e: any) {
-      setSubmitResult({ pass: false, validator: "unknown", total: 0, failed: 0, results: [{ name: "network", ok: false, error: String(e?.message || e) }] });
-    } finally {
-      setSubmitting(false);
+      return;
     }
-  };
+
+    if (!res.ok) {
+      setSubmitResult({
+        pass: false,
+        validator: String(json?.validator ?? (isJudgeMode ? "judge" : "runner")),
+        total: Number(json?.total ?? 0),
+        failed: Number(json?.failed ?? 0),
+        results: Array.isArray(json?.results)
+          ? json.results
+          : [{ name: `${res.status} ${res.statusText}`, ok: false, error: JSON.stringify(json).slice(0, 500) }],
+      });
+      return;
+    }
+
+    if (isJudgeMode) {
+      // 서버 채점 스키마를 그대로 사용
+      setSubmitResult(json as {
+        pass: boolean;
+        validator: string;
+        total: number;
+        failed: number;
+        results: { name: string; ok: boolean; actual?: string; error?: string }[];
+      });
+    } else {
+      // 실행기 응답: stdout/stderr/exitCode를 UI 스키마로 "어댑트"
+      const exit = Number(json?.exitCode ?? 0);
+      const stdout = typeof json?.stdout === "string" ? json.stdout : "";
+      const stderr = typeof json?.stderr === "string" ? json.stderr : "";
+
+      // ❶ 예상 출력이 있는 경우에만 PASS/FAIL 판단
+      const expected = (gen?.test_case?.expected_output ?? "").toString();
+
+      const normalize = (s: string) =>
+        s.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim(); // 개행/트레일링 스페이스 정규화
+
+      const hasExpected = expected.trim().length > 0;
+      const pass = hasExpected ? normalize(stdout) === normalize(expected) : false;
+
+      setSubmitResult({
+        pass,                                // ← 이제 출력이 일치할 때만 PASS
+        validator: hasExpected ? "runner(expected)" : "runner(no-expected)",
+        total: 1,
+        failed: pass ? 0 : 1,
+        results: [
+          {
+            name: hasExpected ? "run (with expected)" : "run (no expected)",
+            ok: pass,
+            actual: stdout?.trim() || "-",
+            error: stderr?.trim() || (exit === 0 ? "-" : `exitCode=${exit}`),
+          },
+        ],
+      });
+    }
+  } catch (e: any) {
+    setSubmitResult({
+      pass: false,
+      validator: "unknown",
+      total: 0,
+      failed: 0,
+      results: [{ name: "network", ok: false, error: String(e?.message || e) }],
+    });
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   // ---------------- 생성값 적용: title / buggy_code / test_case.input / language ----------------
   useEffect(() => {
@@ -186,7 +262,8 @@ export default function TestRunPage() {
   const expectedFromGen: string | null = gen?.test_case?.expected_output ?? null;
   const actualFromGen: string | null =
     gen?.test_case?.actual_output ?? (gen?.test_case?.error ? `ERROR: ${gen.test_case.error}` : null);
-  const diffFromGen: boolean | null = typeof gen?.test_case?.diff === "boolean" ? (gen!.test_case!.diff as boolean) : null;
+  const diffFromGen: boolean | null =
+    typeof gen?.test_case?.diff === "boolean" ? (gen!.test_case!.diff as boolean) : null;
   const hintList: string[] = Array.isArray(gen?.hint_levels) ? (gen!.hint_levels as string[]) : [];
 
   // ---------------- UI ----------------
@@ -201,11 +278,11 @@ export default function TestRunPage() {
                 <div className="flex items-center justify-between gap-4 p-4">
                   <div className="flex items-center gap-3">
                     <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-emerald-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-2.1a.75.75 0 1 0-1.22-.9l-3.621 4.912-1.99-1.993a.75.75 0 1 0-1.06 1.061l2.625 2.625a.75.75 0 0 0 1.138-.089l4.128-5.616Z" clipRule="evenodd"/></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-2.1a.75.75 0 1 0-1.22-.9l-3.621 4.912-1.99-1.993a.75.75 0 1 0-1.06 1.061l2.625 2.625a.75.75 0 0 0 1.138-.089l4.128-5.616Z" clipRule="evenodd" /></svg>
                     </span>
                     <div>
                       <div className="font-semibold">성공! 모든 케이스 통과 🎉</div>
-                      <div className="text-sm opacity-90">디버깅 센스가 대단해요. 다음 문제로 넘어가 보죠?</div>
+                      <div className="text-sm opacity-90">다음 문제로 넘어가 보죠.</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -243,16 +320,15 @@ export default function TestRunPage() {
           </div>
         </div>
       )}
+
       <div className="mx-auto max-w-6xl p-6 space-y-6">
-        {/* 헤더: 타이틀 + 배지 */}
+        {/* 헤더 */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold">{title}</h1>
-            {gen?.language && (
-              <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs uppercase shadow-sm">
-                {gen.language}
-              </span>
-            )}
+            <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs uppercase shadow-sm">
+              {gen?.language ?? language}
+            </span>
             {typeof gen?.valid_bug === "boolean" && (
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs shadow-sm ${
@@ -289,17 +365,19 @@ export default function TestRunPage() {
         </div>
 
         <section className="grid gap-6 lg:grid-cols-3">
-          {/* 좌측: 언어 선택 + 입력값 */}
+          {/* 좌측: 언어/문제/입력 */}
           <aside className="space-y-4 lg:col-span-1">
             <div>
-              <label className="block text-sm font-medium mb-1">문제 ID</label>
+              <label className="block text-sm font-medium mb-1">문제 ID (비우면 실행 모드)</label>
               <input
                 value={problemId}
                 onChange={(e) => setProblemId(e.target.value)}
                 className="w-full p-2 border border-zinc-200 rounded text-sm bg-white shadow-sm"
-                placeholder="sort-demo | reverse-demo | sum-demo"
+                placeholder="예: sort-demo | reverse-demo | sum-demo (또는 비워서 실행 모드)"
               />
-              <p className="mt-1 text-[11px] text-zinc-500">/api/submit 검증 시 사용됩니다. (예: sort-demo, reverse-demo, sum-demo)</p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                값이 있으면 채점기(/api/judge), 비워두면 실행기(/api/submit)로 전송합니다.
+              </p>
             </div>
 
             <div>
@@ -308,7 +386,7 @@ export default function TestRunPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 className="w-full h-28 p-2 border border-zinc-200 rounded font-mono text-sm bg-white shadow-sm"
-                placeholder="공백 구분 정수 한 줄"
+                placeholder="공백 구분 정수 한 줄 (또는 문제 형식에 맞게)"
               />
             </div>
 
@@ -328,7 +406,7 @@ export default function TestRunPage() {
             </div>
           </aside>
 
-          {/* 중앙+우측: 코드 에디터 + 패널 */}
+          {/* 중앙+우측: 코드/패널 */}
           <div className="lg:col-span-2 space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">코드</label>
@@ -343,21 +421,27 @@ export default function TestRunPage() {
               </div>
             </div>
 
-            {/* 결과 패널: 4열 (실행 결과 / 예상 출력 / 현재 출력 / 상태) */}
+            {/* 결과 패널 */}
             <div className="grid md:grid-cols-4 gap-3">
               <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
-                <div className="text-sm font-medium mb-1">코드 실행 결과</div>
-                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">{result?.stdout ?? (result?.error ? `ERROR: ${result.error}` : "실행 결과 없음")}</pre>
+                <div className="text-sm font-medium mb-1">코드 실행 결과(/api/run)</div>
+                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">
+                  {result?.stdout ?? (result?.error ? `ERROR: ${result.error}` : "실행 결과 없음")}
+                </pre>
               </div>
 
               <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
                 <div className="text-sm font-medium mb-1">예상 출력</div>
-                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">{expectedFromGen ?? "없음"}</pre>
+                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">
+                  {expectedFromGen ?? "없음"}
+                </pre>
               </div>
 
               <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
-                <div className="text-sm font-medium mb-1">현재 출력</div>
-                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">{actualFromGen ?? "없음"}</pre>
+                <div className="text-sm font-medium mb-1">현재 출력(생성 테스트 기준)</div>
+                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">
+                  {actualFromGen ?? "없음"}
+                </pre>
               </div>
 
               <div className="rounded border border-zinc-200 p-3 bg-white space-y-1 shadow-sm">
@@ -367,11 +451,13 @@ export default function TestRunPage() {
               </div>
             </div>
 
-            {/* 생성 JSON 원문 + 힌트 */}
+            {/* 생성 JSON + 힌트 */}
             <div className="grid md:grid-cols-2 gap-3">
               <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
                 <div className="text-sm font-medium mb-1">AI 원문(JSON)</div>
-                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">{gen ? JSON.stringify(gen, null, 2) : "생성 결과 없음"}</pre>
+                <pre className="text-xs overflow-auto min-h-24 bg-zinc-50 rounded p-2">
+                  {gen ? JSON.stringify(gen, null, 2) : "생성 결과 없음"}
+                </pre>
               </div>
 
               <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
@@ -388,12 +474,16 @@ export default function TestRunPage() {
               </div>
             </div>
 
-            {/* 제출 검증 결과 */}
+            {/* 제출 검증 결과(공통 UI) */}
             <div className="rounded border border-zinc-200 p-3 bg-white shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">제출 검증 결과</div>
                 {submitResult && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${submitResult.pass ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"}`}>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      submitResult.pass ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+                    }`}
+                  >
                     {submitResult.pass ? "PASS" : "FAIL"}
                   </span>
                 )}
@@ -402,12 +492,16 @@ export default function TestRunPage() {
                 isSuccess ? (
                   <div className="mt-2 flex items-center justify-between rounded border border-emerald-200 bg-emerald-50 p-3">
                     <div className="flex items-center gap-2 text-emerald-800 text-sm">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-2.1a.75.75 0 1 0-1.22-.9l-3.621 4.912-1.99-1.993a.75.75 0 1 0-1.06 1.061l2.625 2.625a.75.75 0 0 0 1.138-.089l4.128-5.616Z" clipRule="evenodd"/></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-2.1a.75.75 0 1 0-1.22-.9l-3.621 4.912-1.99-1.993a.75.75 0 1 0-1.06 1.061l2.625 2.625a.75.75 0 0 0 1.138-.089l4.128-5.616Z" clipRule="evenodd" /></svg>
                       <span className="font-medium">SUCCESS! 모든 테스트를 통과했습니다.</span>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={generateAndValidate} className="rounded bg-emerald-600 px-3 py-1.5 text-xs text-white shadow">다음 문제</button>
-                      <button onClick={() => setSubmitResult(null)} className="rounded border px-3 py-1.5 text-xs">닫기</button>
+                      <button onClick={generateAndValidate} className="rounded bg-emerald-600 px-3 py-1.5 text-xs text-white shadow">
+                        다음 문제
+                      </button>
+                      <button onClick={() => setSubmitResult(null)} className="rounded border px-3 py-1.5 text-xs">
+                        닫기
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -448,6 +542,7 @@ export default function TestRunPage() {
           </div>
         </section>
       </div>
+
       <style jsx>{`
         .confetti {
           position: absolute;

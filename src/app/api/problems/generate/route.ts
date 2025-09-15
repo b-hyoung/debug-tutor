@@ -20,9 +20,20 @@ export async function GET(req: NextRequest) {
       instructions,
       input: [{
         role: "user",
-        content: `언어=${lang}, 주제=버블정렬. 케이스는 1개. expected_output은 오름차순. 코드는 stdin에서 읽고 stdout에만 출력.`,
+        content: `언어=${lang}, 주제=프로그래머스 스타일 문제.
+난이도=중간 이상.
+조건:
+1) 단순 오름차순 정렬 문제는 금지.
+2) 정렬 기준은 최소 2단계 이상(예: 점수 내림차순, 같으면 이름 오름차순).
+3) 입력은 stdin에서 받으며, 출력은 stdout에만 해야 함.
+4) 입력 포맷은 공백 또는 콤마 등 다양하게 주어질 수 있음.
+5) 반드시 의도적인 버그가 포함된 코드(로직 오류 위주)를 생성할 것.
+6) expected_output은 정확히 정의할 것. 엣지 케이스(음수, 중복 포함) 최소 1개 이상 포함.
+7) "buggy_code" 필드에는 **코드만** 포함하고, 주석/힌트/설명은 절대 넣지 마라.
+8) 힌트는 반드시 "hint_levels" 배열 필드에만 단계적으로 제공하라 (ex: ["힌트1", "힌트2", "힌트3"]).
+`
       }],
-      temperature: 0.1,
+      temperature: 0.7,
       max_output_tokens: 800,
     });
 
